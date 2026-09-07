@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+   "expo": {
+      "url": "https://mcp.expo.dev/mcp",
+      "headers": {}
+    },
+    "react-native-mcp": {
+      "command": "npx",
+      "args": ["-y", "@ohah/react-native-mcp-server@0.1.0-rc.14"]
+    }
+  }
+}
+
+// command: /Users/~/npx
