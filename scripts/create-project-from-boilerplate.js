@@ -13,13 +13,12 @@ const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
 
+const IS_WINDOWS = process.platform === "win32";
 const BOILERPLATE_ROOT = path.resolve(__dirname, "..");
-const PROJECTS_DIR = path.resolve(
-  process.env.HOME || process.env.USERPROFILE || "",
-  "Documents",
-  "Projects",
-);
+// Create sibling projects next to this boilerplate folder (same parent directory).
+const PROJECTS_DIR = path.dirname(BOILERPLATE_ROOT);
 const SETUP_STATE_FILE = ".boilerplate-setup-state.json";
+const DEFAULT_EXPO_SDK = "54";
 
 const CONFIG_FILES = [
   ".env.example",
@@ -42,6 +41,8 @@ const ROOT_FILES_TO_COPY = [
   "eas.json",
   ".gitignore",
 ];
+
+const ROOT_FOLDERS_TO_COPY = [".agents", ".cursor"];
 
 const APP_ICON_FILES = [
   "app_icon.png",
@@ -96,6 +97,10 @@ function fail(message) {
   console.error(`❌ ${message}`);
 }
 
+/**
+ * Run shell commands cross-platform.
+ * On Windows, yarn/npx are `.cmd` shims and need `shell: true`.
+ */
 function run(command, options = {}) {
   const { cwd = process.cwd(), silent = false } = options;
   log(silent ? "" : `$ ${command}`);
@@ -103,6 +108,7 @@ function run(command, options = {}) {
     cwd,
     stdio: silent ? "pipe" : "inherit",
     env: process.env,
+    shell: true,
   });
 }
 
@@ -112,7 +118,31 @@ function runCapture(command, options = {}) {
     cwd,
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
+    shell: true,
   }).trim();
+}
+
+function ensureProjectsDir() {
+  // Parent of the boilerplate (often already exists). Never mkdir a drive root
+  // like `D:\` — Windows throws EPERM even with recursive: true.
+  if (fs.existsSync(PROJECTS_DIR)) {
+    if (!fs.statSync(PROJECTS_DIR).isDirectory()) {
+      throw new Error(
+        `Projects path exists but is not a directory: ${PROJECTS_DIR}`,
+      );
+    }
+    return;
+  }
+
+  fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+}
+
+/** Quote a filesystem path for the platform shell (cmd.exe / sh). */
+function quoteShellPath(filePath) {
+  if (IS_WINDOWS) {
+    return `"${String(filePath).replace(/"/g, '""')}"`;
+  }
+  return `'${String(filePath).replace(/'/g, `'\\''`)}'`;
 }
 
 function ask(question, defaultValue) {
@@ -230,17 +260,51 @@ function validateBundleId(bundleId) {
   }
 }
 
-function getLatestExpoTemplate() {
-  try {
-    const version = runCapture("npm view expo version");
-    const sdkMajor = version.split(".")[0];
-    return `blank-typescript@sdk-${sdkMajor}`;
-  } catch {
-    warn(
-      "Could not resolve latest Expo SDK. Falling back to blank-typescript.",
-    );
-    return "blank-typescript";
+/**
+ * Resolves a user SDK input ("54", "latest", etc.) to a major version string.
+ * @param {string} sdkInput
+ * @returns {string}
+ */
+function resolveExpoSdkMajor(sdkInput) {
+  const normalized = String(sdkInput ?? DEFAULT_EXPO_SDK)
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) {
+    return DEFAULT_EXPO_SDK;
   }
+
+  if (normalized === "latest") {
+    try {
+      const version = runCapture("npm view expo version");
+      const sdkMajor = version.split(".")[0];
+      if (!sdkMajor || !/^\d+$/.test(sdkMajor)) {
+        throw new Error(`Unexpected expo version: ${version}`);
+      }
+      return sdkMajor;
+    } catch (error) {
+      warn(
+        `Could not resolve latest Expo SDK (${error.message}). Falling back to SDK ${DEFAULT_EXPO_SDK}.`,
+      );
+      return DEFAULT_EXPO_SDK;
+    }
+  }
+
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(
+      `Invalid Expo SDK version "${sdkInput}". Enter a number (e.g. ${DEFAULT_EXPO_SDK}) or "latest".`,
+    );
+  }
+
+  return normalized;
+}
+
+function getExpoTemplate(sdkInput) {
+  const sdkMajor = resolveExpoSdkMajor(sdkInput);
+  return {
+    sdkMajor,
+    template: `blank-typescript@sdk-${sdkMajor}`,
+  };
 }
 
 function readJsonFile(filePath) {
@@ -321,6 +385,14 @@ function getStepChecks(targetRoot, config) {
       fs.existsSync(path.join(targetRoot, "src", "navigation")) &&
       fs.existsSync(path.join(targetRoot, "src", "components")),
     copy_root_files: () => fs.existsSync(path.join(targetRoot, "App.tsx")),
+    copy_agent_tooling: () =>
+      ROOT_FOLDERS_TO_COPY.every((folder) => {
+        const sourcePath = path.join(BOILERPLATE_ROOT, folder);
+        if (!fs.existsSync(sourcePath)) {
+          return true;
+        }
+        return fs.existsSync(path.join(targetRoot, folder));
+      }),
     copy_config: () =>
       CONFIG_FILES.some((file) => fs.existsSync(path.join(targetRoot, file))),
     write_app_json: () =>
@@ -343,6 +415,7 @@ const SETUP_STEPS = [
   { id: "init_expo", label: "Create Expo project" },
   { id: "copy_src", label: "Copy src folder" },
   { id: "copy_root_files", label: "Copy root boilerplate files" },
+  { id: "copy_agent_tooling", label: "Copy .agents and .cursor folders" },
   { id: "copy_config", label: "Copy config files" },
   { id: "write_app_json", label: "Write app.json" },
   { id: "merge_package_json", label: "Merge package.json dependencies" },
@@ -385,9 +458,7 @@ function getResumeSummary(targetRoot, config) {
 }
 
 function listCandidateProjects() {
-  if (!isDirectory(PROJECTS_DIR)) {
-    throw new Error(`Projects directory not found: ${PROJECTS_DIR}`);
-  }
+  ensureProjectsDir();
 
   return fs
     .readdirSync(PROJECTS_DIR, { withFileTypes: true })
@@ -478,6 +549,7 @@ function loadConfigFromProject(targetRoot) {
       defaultBundleId(path.basename(targetRoot)),
     version: expo.version || "1.0.0",
     iosBuildNumber: expo.ios?.buildNumber || "1",
+    expoSdkVersion: DEFAULT_EXPO_SDK,
     expoOwner: expo.owner || "",
     initGit: true,
   };
@@ -645,6 +717,12 @@ async function collectNewProjectConfig() {
 
   const version = await ask("App version", "1.0.0");
   const iosBuildNumber = await ask("iOS build number", "1");
+  const expoSdkVersion = await ask(
+    'Expo SDK version (e.g. 54, or type "latest")',
+    DEFAULT_EXPO_SDK,
+  );
+  resolveExpoSdkMajor(expoSdkVersion);
+
   const expoOwner = await ask("Expo owner (optional, press Enter to skip)", "");
   const initGit = await askYesNo(
     "Initialize git and create the first commit?",
@@ -661,6 +739,7 @@ async function collectNewProjectConfig() {
     androidPackage,
     version,
     iosBuildNumber,
+    expoSdkVersion,
     expoOwner,
     initGit,
   };
@@ -676,13 +755,16 @@ async function runSetupStep(stepId, config, completedSteps) {
 
   switch (stepId) {
     case "init_expo": {
-      const template = getLatestExpoTemplate();
-      step(`Creating Expo project with template ${template}`);
+      const { sdkMajor, template } = getExpoTemplate(
+        config.expoSdkVersion || DEFAULT_EXPO_SDK,
+      );
+      ensureProjectsDir();
+      step(`Creating Expo project with SDK ${sdkMajor} (template ${template})`);
       run(
-        `npx create-expo-app@latest "${targetRoot}" --template ${template} --yes --no-install --no-agents-md`,
+        `npx create-expo-app@latest ${quoteShellPath(targetRoot)} --template ${template} --yes --no-install --no-agents-md`,
         { cwd: PROJECTS_DIR },
       );
-      success(`Expo project created at ${targetRoot}`);
+      success(`Expo project created at ${targetRoot} (SDK ${sdkMajor})`);
       break;
     }
 
@@ -705,6 +787,24 @@ async function runSetupStep(stepId, config, completedSteps) {
         }
       }
       success("Root files copied");
+      break;
+    }
+
+    case "copy_agent_tooling": {
+      step("Copying .agents and .cursor folders");
+      let copiedFolderCount = 0;
+      for (const folder of ROOT_FOLDERS_TO_COPY) {
+        if (copyBoilerplateFile(folder, targetRoot)) {
+          log(`  • ${folder}/`);
+          copiedFolderCount += 1;
+        }
+      }
+
+      if (copiedFolderCount === 0) {
+        warn("No .agents or .cursor folders were found to copy.");
+      } else {
+        success(`Copied ${copiedFolderCount} agent tooling folder(s).`);
+      }
       break;
     }
 
@@ -866,15 +966,27 @@ async function runSetup(config, options = {}) {
 }
 
 function printNextSteps(targetRoot) {
+  const copyEnvCommand = IS_WINDOWS
+    ? "copy .env.example .env"
+    : "cp .env.example .env";
+
   console.log(`Project path: ${targetRoot}`);
   console.log("\nNext steps:");
-  console.log(`  cd ${targetRoot}`);
+  console.log(`  cd ${quoteShellPath(targetRoot)}`);
+  console.log(`  ${copyEnvCommand}`);
+  console.log("  # edit .env with your environment values");
+  if (!IS_WINDOWS) {
+    console.log("  yarn ios               # build & install dev client (iOS)");
+  }
   console.log(
-    "  cp .env.example .env   # then fill in your environment values",
+    "  yarn android           # build & install dev client (Android)",
   );
-  console.log("  yarn ios               # build & install dev client (iOS)");
-  console.log("  yarn android           # build & install dev client (Android)");
   console.log("  yarn start             # start Metro for the dev client");
+  if (IS_WINDOWS) {
+    console.log(
+      "\nNote: iOS builds require macOS. On Windows, use Android or a cloud Mac builder.",
+    );
+  }
 }
 
 function printConfigSummary(config, modeLabel) {
@@ -888,6 +1000,9 @@ function printConfigSummary(config, modeLabel) {
   console.log(`  Android package: ${config.androidPackage}`);
   console.log(`  Version:         ${config.version}`);
   console.log(`  iOS build:       ${config.iosBuildNumber}`);
+  console.log(
+    `  Expo SDK:        ${config.expoSdkVersion || DEFAULT_EXPO_SDK}`,
+  );
   console.log(`  Git init:        ${config.initGit ? "yes" : "no"}`);
 }
 
@@ -909,9 +1024,12 @@ async function confirmProceed() {
 async function main() {
   console.log("Expo React Native Boilerplate — Project Setup\n");
   console.log(`Boilerplate: ${BOILERPLATE_ROOT}`);
-  console.log(`Projects directory: ${PROJECTS_DIR}\n`);
+  console.log(`New projects will be created in: ${PROJECTS_DIR}`);
+  console.log(`Platform: ${process.platform}\n`);
 
   try {
+    ensureProjectsDir();
+
     const resumeExisting = await askYesNo(
       "Resume setup on an existing project?",
       false,

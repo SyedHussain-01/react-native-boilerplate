@@ -7,10 +7,8 @@ import {
 import { useCallback } from "react";
 
 GoogleSignin.configure({
-  webClientId:
-    "449707104662-ibj65d4rtmakd1jmdrio4rsgsos9t98n.apps.googleusercontent.com",
-  iosClientId:
-    "449707104662-j9jti7tq6s4vmvp6p6uqkeg79rk7ct1b.apps.googleusercontent.com",
+  webClientId: "",
+  iosClientId: "",
 });
 
 export function useGoogleSignIn() {
