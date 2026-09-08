@@ -1,0 +1,57 @@
+---
+description: Where to place images, icons, backgrounds, and Lottie files
+globs: App.tsx,src/screens/**/*.tsx,src/components/**/*.tsx
+alwaysApply: false
+---
+
+# Asset placement
+
+All static media lives under `src/assets/`. Do not put images or Lottie JSON next to a screen or inside `src/components`. Load with `require("...")` and render through `AppImage` (see `ui-components.mdc`). Lottie uses `lottie-react-native` + a file from `lottie/`.
+
+## Folders
+
+```
+src/assets/
+  images/              # photos, covers, illustrations, logos used as content
+  icons/               # small UI glyphs, tab icons, list/action icons
+  background_images/   # full-screen screen backgrounds only
+  lottie/              # Lottie JSON animations
+  fonts/               # Plus Jakarta Sans — do not add a new family here unless the design system changes
+```
+
+| Need | Folder | Examples |
+| ---- | ------ | -------- |
+| Photo, cover, illustration, large logo, avatar placeholder | `src/assets/images/` | `food_of_the_day_cover.png`, `rp_cover.png`, `logo_blue.png` |
+| Button/tab/list icon, chevron, meal-type glyph | `src/assets/icons/` | `btm_home.png`, `lm_search.png`, `settings_logout.png` |
+| Screen wallpaper (`MainWrapper` `type`) | `src/assets/background_images/` | `background_one.png`, `background_two.png` |
+| Animated success / empty / loader | `src/assets/lottie/` | `success.json` |
+
+```tsx
+// ✅
+<AppImage source={require("../../assets/icons/lm_search.png")} />
+<AppImage source={require("../../assets/images/rp_cover.png")} />
+source={require("../../assets/lottie/success.json")}   // LottieView only
+
+// ❌ require() from screens/ or components/
+// ❌ a 24px glyph in images/, or a full-bleed photo in icons/
+// ❌ a new screen background dumped into images/ — use background_images/ and MainWrapper
+```
+
+Remote URLs stay remote (`AppImage` `source={{ uri }}`). Do not download API images into `src/assets`.
+
+Do not add files to `src/assets/temp_images/` (legacy). Do not add new folders under `src/assets/` unless none of the four above fit.
+
+## Naming
+
+- `snake_case` or `kebab-case` PNG/JSON. No spaces.
+- Prefix by screen or control when it is feature-specific: `btm_` (tab bar), `lm_` (log meal), `settings_`, `fab_`, `rd_` (recipe details).
+- Backgrounds stay `background_one` / `background_two` (or the next `background_<n>`) — then wire them on `MainWrapper`, not in the screen.
+- Lottie: short intent name (`success.json`), not `animation1.json`.
+
+## Hard rules
+
+- New raster UI icons → `src/assets/icons/`.
+- New photos / covers / illustrations → `src/assets/images/`.
+- New full-screen backgrounds → `src/assets/background_images/` + `MainWrapper`.
+- New Lottie → `src/assets/lottie/*.json`, played with `LottieView`, not `AppImage`.
+- App / adaptive icon stays `src/assets/icons/app_icon.png` (`app.json`) — do not invent a second store-icon path.

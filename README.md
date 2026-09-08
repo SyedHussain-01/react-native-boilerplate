@@ -42,19 +42,19 @@ This boilerplate uses native modules (MMKV, Firebase Messaging, RevenueCat, Goog
 
 Answer `n` to **Resume setup on an existing project?** to start a new app. You will be asked for:
 
-| Prompt | Notes |
-| --- | --- |
-| Folder name | Letters, numbers, dots, underscores, hyphens only |
-| App display name | Shown under the icon |
-| Expo slug | URL-safe (`my-app`) |
-| URL scheme | Deep linking (`myapp`) |
-| iOS bundle identifier | e.g. `com.company.myapp` |
-| Android application ID | Defaults to the iOS bundle ID |
-| App version | Default `1.0.0` |
-| iOS build number | Default `1` |
-| Expo SDK version | Number (e.g. `54`) or `latest`. Default in the script is `54` |
-| Expo owner | Optional EAS account / org |
-| Initialize git | Default yes; creates `Initial commit from react-native boilerplate` |
+| Prompt                 | Notes                                                               |
+| ---------------------- | ------------------------------------------------------------------- |
+| Folder name            | Letters, numbers, dots, underscores, hyphens only                   |
+| App display name       | Shown under the icon                                                |
+| Expo slug              | URL-safe (`my-app`)                                                 |
+| URL scheme             | Deep linking (`myapp`)                                              |
+| iOS bundle identifier  | e.g. `com.company.myapp`                                            |
+| Android application ID | Defaults to the iOS bundle ID                                       |
+| App version            | Default `1.0.0`                                                     |
+| iOS build number       | Default `1`                                                         |
+| Expo SDK version       | Number (e.g. `54`) or `latest`. Default in the script is `54`       |
+| Expo owner             | Optional EAS account / org                                          |
+| Initialize git         | Default yes; creates `Initial commit from react-native boilerplate` |
 
 Confirm the summary, then the script runs end to end.
 
@@ -104,22 +104,22 @@ On Windows, use Android or a cloud Mac builder for iOS.
 
 ## Stack
 
-| Area | Choice |
-| --- | --- |
-| Runtime | Expo SDK **56** in this template (`expo ~56`), React **19.2**, React Native **0.85** |
-| Architecture | New Architecture on (`newArchEnabled`), React Compiler on |
-| Entry | `index.ts` → `App.tsx` (not Expo Router) |
-| Navigation | React Navigation 7 — `@react-navigation/native-stack` + bottom tabs |
-| Data fetching | TanStack Query + Axios (`src/api/api.ts`) |
-| Client state | Zustand, persisted with MMKV |
-| Forms | React Hook Form (`src/utils/rules.ts`) |
-| UI | Shared kit in `src/components/common`, `react-native-size-matters`, `expo-image` |
-| Keyboard | `react-native-keyboard-controller` |
-| Gestures / animation | Gesture Handler, Reanimated 4, Lottie |
-| Auth extras | Google Sign-In, Apple Authentication |
-| Push | `@react-native-firebase/messaging`, Notifee |
-| Subscriptions | RevenueCat (`react-native-purchases`) |
-| Builds | `expo-dev-client`, EAS (`eas.json`) |
+| Area                 | Choice                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| Runtime              | Expo SDK **56** in this template (`expo ~56`), React **19.2**, React Native **0.85** |
+| Architecture         | New Architecture on (`newArchEnabled`), React Compiler on                            |
+| Entry                | `index.ts` → `App.tsx` (not Expo Router)                                             |
+| Navigation           | React Navigation 7 — `@react-navigation/native-stack` + bottom tabs                  |
+| Data fetching        | TanStack Query + Axios (`src/api/api.ts`)                                            |
+| Client state         | Zustand, persisted with MMKV                                                         |
+| Forms                | React Hook Form (`src/utils/rules.ts`)                                               |
+| UI                   | Shared kit in `src/components/common`, `react-native-size-matters`, `expo-image`     |
+| Keyboard             | `react-native-keyboard-controller`                                                   |
+| Gestures / animation | Gesture Handler, Reanimated 4, Lottie                                                |
+| Auth extras          | Google Sign-In, Apple Authentication                                                 |
+| Push                 | `@react-native-firebase/messaging`, Notifee                                          |
+| Subscriptions        | RevenueCat (`react-native-purchases`)                                                |
+| Builds               | `expo-dev-client`, EAS (`eas.json`)                                                  |
 
 Path alias: `@/*` maps to the project root (`tsconfig.json`). Prefer `@/src/...` for app code.
 
@@ -138,15 +138,15 @@ yarn android
 yarn start
 ```
 
-| Script | Purpose |
-| --- | --- |
+| Script                | Purpose                                             |
+| --------------------- | --------------------------------------------------- |
 | `yarn create-project` | Scaffold or resume a sibling app from this template |
-| `yarn start` | `expo start --dev-client` |
-| `yarn android` | `expo run:android` |
-| `yarn ios` | `expo run:ios` |
-| `yarn web` | `expo start --web` |
-| `yarn prebuild` | `expo prebuild` |
-| `yarn lint` | `expo lint` |
+| `yarn start`          | `expo start --dev-client`                           |
+| `yarn android`        | `expo run:android`                                  |
+| `yarn ios`            | `expo run:ios`                                      |
+| `yarn web`            | `expo start --web`                                  |
+| `yarn prebuild`       | `expo prebuild`                                     |
+| `yarn lint`           | `expo lint`                                         |
 
 `scripts/reset-project.js` is leftover from `create-expo-app`. Do **not** use it on this boilerplate — it is meant for Expo Router blank apps, not this `src/` layout.
 
@@ -156,12 +156,12 @@ yarn start
 
 Copy `.env.example` to `.env`. Expo inlines variables that start with `EXPO_PUBLIC_`.
 
-| Variable | Used for |
-| --- | --- |
-| `EXPO_PUBLIC_API_BASE_URL` | REST origin. Client requests go to `{BASE}/api/v1` |
-| `EXPO_PUBLIC_UPLOAD_FILE_KEY` | Bearer token for multipart uploads (`src/api/upload`) |
-| `EXPO_PUBLIC_PURCHASE_IOS_KEY` | RevenueCat iOS API key |
-| `EXPO_PUBLIC_PURCHASE_ANDROID_KEY` | RevenueCat Android API key |
+| Variable                           | Used for                                              |
+| ---------------------------------- | ----------------------------------------------------- |
+| `EXPO_PUBLIC_API_BASE_URL`         | REST origin. Client requests go to `{BASE}/api/v1`    |
+| `EXPO_PUBLIC_UPLOAD_FILE_KEY`      | Bearer token for multipart uploads (`src/api/upload`) |
+| `EXPO_PUBLIC_PURCHASE_IOS_KEY`     | RevenueCat iOS API key                                |
+| `EXPO_PUBLIC_PURCHASE_ANDROID_KEY` | RevenueCat Android API key                            |
 
 Restart Metro after changing `.env`. Never commit `.env`.
 
@@ -268,13 +268,13 @@ RevenueCat paywall hooks in `MainStack` are commented out. Re-enable `usePurchas
 
 `src/store/auth.store.ts` is the source of truth: token, refresh token, user, profile flags, subscription snapshot, linked provider. State is persisted to MMKV (`auth-storage`).
 
-| Method | When |
-| --- | --- |
-| `applyLoginResponse` | POST login |
-| `applyVerifyOtpResponse` | OTP success |
-| `syncFromGetMeResponse` | GET `/auth/me` |
-| `syncFromLinkProviderResponse` | Link social provider |
-| `clearAuth` | Logout — also `queryClient.clear()` |
+| Method                         | When                                |
+| ------------------------------ | ----------------------------------- |
+| `applyLoginResponse`           | POST login                          |
+| `applyVerifyOtpResponse`       | OTP success                         |
+| `syncFromGetMeResponse`        | GET `/auth/me`                      |
+| `syncFromLinkProviderResponse` | Link social provider                |
+| `clearAuth`                    | Logout — also `queryClient.clear()` |
 
 `src/store/syncMeAfterAuth.ts` refreshes `/auth/me` after login or OTP.
 
@@ -310,11 +310,11 @@ Query defaults (`QueryProvider`): retry 2, stale 5 minutes, gc 24 hours, no refe
 
 ## State and storage
 
-| Store | File | Persistence |
-| --- | --- | --- |
-| Auth | `src/store/auth.store.ts` | MMKV `auth-storage` |
-| App | `src/store/store.ts` | MMKV `app-storage` (`isLoading`) |
-| Device token | `src/store/deviceTokenStorage.ts` | Used on signup/login |
+| Store        | File                              | Persistence                      |
+| ------------ | --------------------------------- | -------------------------------- |
+| Auth         | `src/store/auth.store.ts`         | MMKV `auth-storage`              |
+| App          | `src/store/store.ts`              | MMKV `app-storage` (`isLoading`) |
+| Device token | `src/store/deviceTokenStorage.ts` | Used on signup/login             |
 
 MMKV instance: `src/store/mmkv_config.ts` (`id: "app-storage"`). Change `encryptionKey` per product before shipping.
 
@@ -328,17 +328,17 @@ Brand colors live in `src/theme/colors.ts` (`palette`). Import `palette` / `them
 
 Shared components (`src/components/common`):
 
-| Component | Role |
-| --- | --- |
-| `AppText` | Weight + size scale (`xs`–`5xl`); swap the font family for your brand |
-| `AppImage` | `expo-image` |
-| `Button` | `primary` / `outlined` / `text` |
-| `TextInput` | Forms (React Hook Form `control`) |
-| `AppHeader` / `MainHeader` | Screen headers |
-| `MainWrapper` | Safe area + background image |
-| `BottomSheet` | `@gorhom/bottom-sheet` |
-| `KeyboardAvoidingScrollView` | Keyboard-aware screens |
-| `SearchBar`, `Dropdown`, `UserAvatar`, `ProgressBar`, `Seekbar`, `FAQItem`, `Fab` | Common controls |
+| Component                                                                         | Role                                                                  |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `AppText`                                                                         | Weight + size scale (`xs`–`5xl`); swap the font family for your brand |
+| `AppImage`                                                                        | `expo-image`                                                          |
+| `Button`                                                                          | `primary` / `outlined` / `text`                                       |
+| `TextInput`                                                                       | Forms (React Hook Form `control`)                                     |
+| `AppHeader` / `MainHeader`                                                        | Screen headers                                                        |
+| `MainWrapper`                                                                     | Safe area + background image                                          |
+| `BottomSheet`                                                                     | `@gorhom/bottom-sheet`                                                |
+| `KeyboardAvoidingScrollView`                                                      | Keyboard-aware screens                                                |
+| `SearchBar`, `Dropdown`, `UserAvatar`, `ProgressBar`, `Seekbar`, `FAQItem`, `Fab` | Common controls                                                       |
 
 Scale spacing with `scale` / `verticalScale` / `moderateScale` from `react-native-size-matters`.
 
@@ -372,11 +372,11 @@ Settings includes **Manage Subscription** (`ManageSubscription` in the param lis
 
 `eas.json` profiles:
 
-| Profile | Use |
-| --- | --- |
+| Profile       | Use                               |
+| ------------- | --------------------------------- |
 | `development` | Dev client, internal distribution |
-| `preview` | Internal distribution |
-| `production` | Store builds (`autoIncrement`) |
+| `preview`     | Internal distribution             |
+| `production`  | Store builds (`autoIncrement`)    |
 
 After generating a project, run `eas init` (or `eas build:configure`) so `extra.eas.projectId` is set. The setup script **does not** copy the boilerplate `projectId`.
 

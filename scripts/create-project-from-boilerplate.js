@@ -127,7 +127,9 @@ function ensureProjectsDir() {
   // like `D:\` — Windows throws EPERM even with recursive: true.
   if (fs.existsSync(PROJECTS_DIR)) {
     if (!fs.statSync(PROJECTS_DIR).isDirectory()) {
-      throw new Error(`Projects path exists but is not a directory: ${PROJECTS_DIR}`);
+      throw new Error(
+        `Projects path exists but is not a directory: ${PROJECTS_DIR}`,
+      );
     }
     return;
   }
@@ -976,7 +978,9 @@ function printNextSteps(targetRoot) {
   if (!IS_WINDOWS) {
     console.log("  yarn ios               # build & install dev client (iOS)");
   }
-  console.log("  yarn android           # build & install dev client (Android)");
+  console.log(
+    "  yarn android           # build & install dev client (Android)",
+  );
   console.log("  yarn start             # start Metro for the dev client");
   if (IS_WINDOWS) {
     console.log(

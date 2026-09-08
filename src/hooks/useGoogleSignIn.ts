@@ -7,10 +7,8 @@ import {
 import { useCallback } from "react";
 
 GoogleSignin.configure({
-  webClientId:
-    "",
-  iosClientId:
-    "",
+  webClientId: "",
+  iosClientId: "",
 });
 
 export function useGoogleSignIn() {

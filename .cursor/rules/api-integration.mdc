@@ -1,0 +1,81 @@
+---
+description: API integration pattern (endpoints, types, React Query hooks, UI hooks)
+globs: src/api/**/*.ts,src/hooks/**/*.ts,src/hooks/**/*.tsx
+alwaysApply: false
+---
+
+# API Integration Rules
+
+Whenever a new API needs to be integrated (curl, Postman export, or endpoint + response shape), follow this flow in order. Do not skip layers, even for a "simple" endpoint.
+
+Treat the given method, path, headers, body, and response as the source of truth. Do not invent fields. Do not drop fields. Mark a field optional (`?`) if the API might omit it.
+
+## Steps (always in this order)
+
+1. **Register the endpoint** in `src/api/endpoints.ts`
+   - Add the path to the matching group (`AUTH`, `ONBOARDING`, `MAIN`, `UPLOAD`, `CONTENT_MANAGEMENT`).
+   - Static paths are constants. Path params use a `buildXxxEndpoint(id)` helper in the same file (`encodeURIComponent` the id).
+   - Never hardcode a URL string in a module, hook, or component.
+
+2. **Define types** in `src/api/<module>/type.ts`
+   - Request + response types named by intent (`LoginRequest`, `LoginResponse`).
+   - Type the full sample payload. Reuse `ApiResponse<T>` from `api/auth/type.ts` when the envelope matches `{ status, message, data, status_code }`.
+
+3. **Write the React Query hook** in `src/api/<module>/index.ts`
+   - GET → `useXxxQuery` via `useApiQuery` from `src/api/api.ts`.
+   - POST / PUT / PATCH / DELETE → `useXxxMutation` via `useApiMutation` from `src/api/api.ts`.
+   - Paginated lists → `useXxxInfiniteQuery` via `useInfiniteQuery` + `fetchFromAPI` (same as existing infinite queries).
+   - Pass a stable `queryKey` that includes every param that changes the result (`["foods", keyword, page]`).
+   - Append query strings to the endpoint constant in this file (`${MAIN.FOODS}?page=1`). Do not bake query strings into `endpoints.ts` unless you add a builder.
+   - Name by intent, not HTTP verb: `useUserProfileQuery`, not `useGet1`.
+   - Forward an optional `config` (`enabled`, `onSuccess`, …) so callers can gate on ids.
+
+4. **Create a UI hook** in `src/hooks/<feature>/useXxx.ts`
+   - This is the only layer that calls `api/<module>/index.ts` on behalf of the UI.
+   - Map the response to UI-ready values (`{ title, items, isLoading, error, refetch }`). Do not dump the raw envelope into the screen.
+   - Optional-chain every access (`data?.data?.user?.email`).
+
+5. **Wire the UI**
+   - Screens and components consume the UI hook only — never `useXxxQuery` / `useXxxMutation` / `fetchFromAPI`.
+   - Optional-chain in the UI as well.
+
+## File responsibility
+
+| Layer            | File                                   | Responsibility                                                                 |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
+| Route constants  | `src/api/endpoints.ts`                 | Path strings + `buildXxxEndpoint` helpers                                      |
+| Types            | `src/api/<module>/type.ts`             | Request & response interfaces                                                  |
+| Shared client    | `src/api/api.ts`                       | `fetchFromAPI`, `useApiQuery`, `useApiMutation` (auth header, errors, toasts)  |
+| Query / mutation | `src/api/<module>/index.ts`            | Typed React Query hooks using the shared client                                |
+| UI-ready data    | `src/hooks/<feature>/useXxx.ts`        | Calls the API hook, maps/normalizes, exposes what the screen renders           |
+| UI               | Screens / components                   | Calls the UI hook only                                                         |
+
+```ts
+// ✅ api/main/index.ts
+export function useTodayFoodQuery(config?: Parameters<typeof useApiQuery<TodayFoodResponse>>[2]) {
+  return useApiQuery<TodayFoodResponse>(MAIN.FOODS_TODAY_FOOD, ["today-food"], config);
+}
+
+// ✅ hooks/home/useFoodOfTheDay.ts — maps to card props
+const query = useTodayFoodQuery();
+const title = query?.data?.data?.name?.trim?.() || "Today's pick";
+
+// ❌ screen imports useTodayFoodQuery from api/main
+```
+
+## Client rules
+
+- JSON requests go through `fetchFromAPI` / `useApiQuery` / `useApiMutation`. Do not call `axios` or `fetch` in a module file for JSON.
+- Do not create a new axios instance or base URL. `API_BASE_URL` lives in `api.ts`.
+- Multipart uploads are the exception: follow the existing `fetch` + `FormData` pattern in `api/upload` (axios + JSON body breaks RN file uploads). Still use the `UPLOAD.*` endpoint constant and types in `type.ts`.
+- Auth token and timezone headers are applied in `fetchFromAPI`. Do not attach them again in a module unless you are on the multipart exception path.
+
+## Hard rules
+
+- No hardcoded endpoint strings outside `endpoints.ts` (and query-string appends in `api/<module>/index.ts`).
+- No untyped responses — types in `type.ts` before anything consumes the call.
+- No `useXxxQuery` / `useXxxMutation` / `fetchFromAPI` inside screens or presentational components.
+- Type-only imports from `type.ts` belong in the API module and the UI hook, not in the screen.
+- Optional-chain every API-derived access, including inside hooks (`user?.profile?.email`).
+- One UI hook per screen/module concern. Do not cram unrelated endpoints into a single hook unless the screen genuinely needs them together.
+- Pass `enabled: !!id` (or equivalent) when the request requires a path/query id.
