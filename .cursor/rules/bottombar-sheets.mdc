@@ -1,0 +1,68 @@
+---
+description: Bottom sheets/modals — Context + BottomBar host vs screen-local state
+globs: App.tsx,src/contexts/**/*.tsx,src/navigation/BottomBar.tsx,src/screens/**/*.tsx,src/components/**/*.tsx
+alwaysApply: false
+---
+
+# Bottom sheets & modals
+
+Use Context **only** when the sheet or modal must open over `BottomBar` (tab screens + the floating tab bar). Every other screen keeps the overlay in that screen’s own state.
+
+## When to use which
+
+| Overlay lives on | State | Host the JSX |
+| ---------------- | ----- | ------------ |
+| A **tab** inside `BottomBar` (Home, Progress, Meals, Resources, More) | React Context — one `.tsx` file in `src/contexts/` | Render the sheet/modal in `src/navigation/BottomBar.tsx` so it sits above the tab bar |
+| A **pushed screen** (MainStack / Auth / Onboarding — LogMeal, Settings, …) | `useState` on that screen | Render the sheet/modal in the screen (or a child it owns) |
+
+```tsx
+// ✅ tab (Meals) opens a sheet over BottomBar
+const { openBottomSheet } = useSwapFoodBottomSheet();
+openBottomSheet(suggestions);
+
+// ✅ pushed screen — local state, no context
+const [sheetIndex, setSheetIndex] = useState(-1);
+<SelectFoodBottomSheet index={sheetIndex} onChange={setSheetIndex} />
+
+// ❌ context for a Settings logout modal / LogMeal food picker
+// ❌ mounting a BottomBar-hosted sheet inside the tab screen (clipped under the tab bar)
+```
+
+Do not create a context because “the sheet might be reused.” Reuse the component; only lift state to context when `BottomBar` must host it.
+
+## BottomBar + Context (required steps)
+
+1. **Context** — one file **directly** in `src/contexts/` (no subfolders): `src/contexts/<Name>BottomSheetContext.tsx` (or `*ModalContext.tsx`). Same pattern as `SwapFoodBottomSheetContext.tsx`, `FilterBottomSheetContext.tsx`, `MealHistoryFoodsBottomSheetContext.tsx`. Export `*Provider` and `use*` from that file.
+2. **Provider** — wrap in `App.tsx` next to the existing sheet providers (`SwapFoodBottomSheetProvider`, `FilterBottomSheetProvider`, `MealHistoryFoodsBottomSheetProvider`).
+3. **Host** — mount the sheet/modal once in `BottomBar.tsx` (sibling of the tab navigator / floating bar), wired to the context ref + index.
+4. **Open from the tab** — the tab screen or its cards call `openBottomSheet(...)` / `closeBottomSheet()`. They do not render the sheet.
+
+Context shape (match existing files):
+
+- `openBottomSheet` / `closeBottomSheet`
+- `bottomSheetRef` (`BottomSheetRef` from common `BottomSheet`)
+- `bottomSheetIndex` (`-1` closed, `>= 0` open) + `onChange` / `handleSheetIndexChange`
+- Optional payload state if the sheet needs ids or lists (`sheetPayload`, suggestions, filters)
+
+The hook throws if used outside its provider.
+
+Chrome is always common `BottomSheet` (see `ui-components.mdc`). Feature UI is `src/components/<feature>/<Name>BottomSheet.tsx`.
+
+## Screen-local overlays
+
+On any non-tab screen, keep a boolean or snap index in the screen:
+
+```tsx
+const [showModal, setShowModal] = useState(false);
+const [sheetIndex, setSheetIndex] = useState(-1);
+```
+
+Pass `visible` / `index` / `onClose` as props. Do not add a `src/contexts` file for these.
+
+## Hard rules
+
+- Context files live **directly** in `src/contexts/` (`src/contexts/FooBottomSheetContext.tsx`). Do not add `src/contexts/<feature>/` folders.
+- Context sheets/modals are hosted in `BottomBar.tsx`, not in the tab’s screen tree.
+- Tab code opens them through the context hook only.
+- Pushed screens use internal state — no new context, no BottomBar mount.
+- One context per BottomBar overlay; do not dump unrelated sheets into one provider.

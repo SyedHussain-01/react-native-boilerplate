@@ -1,0 +1,99 @@
+---
+description: Navigation tree from App.tsx (RootNavigator, stacks, tabs, gates)
+globs: App.tsx,src/navigation/**/*.ts,src/navigation/**/*.tsx,src/types/navigation.ts
+alwaysApply: false
+---
+
+# Navigation structure
+
+This app uses React Navigation (native stack + JS bottom tabs), not Expo Router. `App.tsx` mounts `NavigationContainer` with `navigationRef`, then `RootNavigator`. Do not add a second `NavigationContainer` or a parallel router.
+
+## Tree
+
+```
+App.tsx
+  NavigationContainer (ref = navigationRef)
+    RootNavigator          native stack, headerShown: false
+      Auth        → AuthStack
+      Onboarding  → OnboardingStack
+      MainApp     → MainStack
+                      BottomBar → tabs: Home | Progress | Meals | Resources | More
+                      + pushed screens (Settings, LogMeal, …)
+```
+
+| File | Role |
+| ---- | ---- |
+| `App.tsx` | Providers + `NavigationContainer` + `RootNavigator` |
+| `src/navigation/RootNavigator.tsx` | Picks Auth / Onboarding / MainApp |
+| `src/navigation/AuthStack.tsx` | Pre-auth (marketing, sign in/up, OTP, guest questionnaire) |
+| `src/navigation/OnboardingStack.tsx` | Post-auth until profile is complete (paywall + ProfileSetup) |
+| `src/navigation/MainStack.tsx` | Authenticated app: tabs + every pushed screen |
+| `src/navigation/BottomBar.tsx` | Custom tab bar (default tab bar is hidden) |
+| `src/navigation/navigationRef.ts` | Root resets (`resetRootToMainApp`, logout, paywall, …) |
+| `src/types/navigation.ts` | `*ParamList` types — source of truth for route names and params |
+| `src/utils/onboardingRouting.ts` | Which root / onboarding entry a user belongs on |
+
+Screens live in `src/screens/{auth\|main\|onboarding}/`. Navigators only import and register them.
+
+## Which root stack
+
+`RootNavigator` initial route:
+
+- No auth token → `Auth`
+- Token + profile **incomplete** → `Onboarding` (`getRootRouteAfterAuth`)
+- Token + profile **complete** → `MainApp`
+
+`ensureRootRouteForUser` keeps that aligned after login, cold start, and GET `/me`. Cross-root moves use `navigationRef` helpers (`resetRootToMainApp`, `resetRootToAuthAfterLogout`, …), not `navigate("Auth")` from inside MainApp.
+
+**Auth** initial: `OnboardingOne` unless the guest questionnaire is already completed (then `Signup`).
+
+**Onboarding** initial: `ManageSubscription` (`from: "paywall"`) until RevenueCat says subscribed; then `ProfileSetup`. See `inapp-subscription-paywall.mdc`.
+
+**MainApp** initial:
+
+1. Fully onboarded + subscription known + not subscribed → `ManageSubscription`
+2. Else assessment incomplete → `Questionairre`
+3. Else `BottomBar`
+
+`useSubscriptionPaywall` and `useAssessmentGate` reset stray MainApp routes. Do not bypass them by pushing `BottomBar` for users who still owe paywall or assessment.
+
+## Adding a screen
+
+Always in this order:
+
+1. Create `src/screens/<group>/ScreenName.tsx`.
+2. Add the route + params to the matching list in `src/types/navigation.ts`.
+3. Register `<Stack.Screen>` (or tab) on the matching navigator.
+4. Navigate with that param list’s types.
+
+| Screen belongs to | Param list | Navigator |
+| ----------------- | ---------- | --------- |
+| Logged-out / guest | `AuthStackParamList` | `AuthStack` |
+| Post-auth, profile not done | `OnboardingStackParamList` | `OnboardingStack` |
+| Tab root | `MainTabParamList` | `BottomBar` |
+| Everything else after login | `MainStackParamList` | `MainStack` |
+
+A new feature screen is almost always **MainStack**, not a new root or a new tab. Only add a tab if it is a persistent bottom-bar destination.
+
+Params that a screen reads must be declared on the param list (`undefined` if none). Nested tabs use `NavigatorScreenParams<MainTabParamList>` on `BottomBar`.
+
+```ts
+// ✅ typed push on MainStack
+navigation.navigate("RecipeDetails", { recipeId });
+
+// ✅ nested tab
+navigation.navigate("BottomBar", { screen: "Home" });
+
+// ❌ navigate to a screen that is not registered / not on the param list
+```
+
+Native stacks: `@react-navigation/native-stack`, `headerShown: false` (screens use `AppHeader`). Keep that. Do not introduce `@react-navigation/stack` or Expo Router file routes.
+
+## Hard rules
+
+- One `NavigationContainer`, wired to `navigationRef`.
+- Do not put screen UI inside navigator files.
+- Do not register a screen without updating `src/types/navigation.ts`.
+- Root switches (auth ↔ onboarding ↔ main) go through `navigationRef` resets, not ad-hoc `navigate` to another root.
+- Paywall / assessment locking stays in the existing gates — do not add a third copy of that logic in a random screen.
+- Same screen in two stacks (e.g. `PrivacyPolicy` on Auth + Main, `ManageSubscription` on Onboarding + Main) is intentional; do not merge stacks to “dedupe” it.

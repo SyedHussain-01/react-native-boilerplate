@@ -1,0 +1,77 @@
+---
+description: In-app subscription paywall (RevenueCat, gating, Manage Subscription)
+globs: src/hooks/usePurchases.ts,src/hooks/useSubscriptionPaywall.ts,src/screens/**/ManageSubscription.tsx,src/components/manage_subscription/**/*,src/navigation/**/*.tsx
+alwaysApply: false
+---
+
+# In-app subscription & paywall
+
+Subscriptions go through RevenueCat (`react-native-purchases`) and our custom `ManageSubscription` screen. Do not add StoreKit/Play Billing calls, RevenueCat paywall UI, or a second purchase client.
+
+## Layers
+
+| Layer | Where | Responsibility |
+| ----- | ----- | -------------- |
+| SDK + state | `PurchaseProvider` / `usePurchases` in `src/hooks/usePurchases.ts` | Configure SDK, link app user id, offerings, purchase / restore / manage, `CustomerInfo` |
+| Access gate | `useSubscriptionPaywall` in `src/hooks/useSubscriptionPaywall.ts` | Keep unsubscribed, fully onboarded users on the paywall |
+| Screen | `src/screens/main/ManageSubscription.tsx` | Compose paywall / manage UI; call `usePurchases` only |
+| Cards | `src/components/manage_subscription` | `SubscriptionPlanCard`, `FeatureItem` |
+
+`PurchaseProvider` wraps the app (see `App.tsx`). `usePurchases()` throws outside that provider — do not call `Purchases.*` from a screen, navigator, or feature component.
+
+## Source of truth
+
+**Access is RevenueCat `CustomerInfo` only** (`activeSubscriptions` or `entitlements.active`), after it has been fetched.
+
+- `isSubscribed` from `usePurchases` is the flag to gate on.
+- `customerInfoResolved` + `isPurchasesUserSynced` must both be true before you treat the user as unsubscribed or force the paywall.
+- Auth-store `isSubscribed` is a mirror for routing convenience. Do not grant premium access from GET `/auth/me` alone.
+
+```ts
+// ✅ wait until RC identity + CustomerInfo are ready
+const { isSubscribed, isPurchasesUserSynced, customerInfoResolved } = usePurchases();
+const subscriptionKnown = customerInfoResolved && isPurchasesUserSynced;
+
+// ❌ show paywall because backend isSubscribed is false while RC is still loading
+```
+
+Link RevenueCat to the backend user `_id` (`Purchases.logIn`). Do not leave an authenticated user on an anonymous `$RCAnonymous…` id.
+
+## When to show the paywall
+
+1. **Onboarding (profile incomplete):** Onboarding stack can open `ManageSubscription` with `{ from: "paywall" }`.
+2. **Main app (profile complete, not subscribed):** `MainStack` initial route is `ManageSubscription`. `useSubscriptionPaywall` resets any other main route back to it.
+3. **Settings (already subscribed or managing):** navigate `ManageSubscription` with `{ from: "settings" }` — back button allowed.
+
+Paywall mode (`from === "paywall"` or missing `from`): no back, disable iOS swipe-back (`gestureEnabled: isSubscribed`). Allowed escapes: Terms, Privacy, Logout.
+
+Do not add new main-stack screens to the paywall allowlist unless they are required legal/account exits.
+
+## Screen behavior
+
+- Plans come from `getSubscriptionPlans(offerings)` — store prices/titles, not hardcoded SKUs.
+- Selected plan’s `purchase` (`package` + optional Android `subscriptionOption`) is passed to `handlePurchase`.
+- On success: `syncSubscriptionFromBackend()` then route into the app (or next onboarding step).
+- Already subscribed on this screen: show Cancel → `openSubscriptionManagement()` (store manage UI / `managementURL`). Do not invent a cancel API.
+- Restore goes through `restorePurchases` on the provider (already-owned Play/StoreKit errors also sync/restore inside `handlePurchase`).
+- Loading shell while `isPaywall && (!customerInfoResolved || isSubscribed)` so a paid user is not flashed the subscribe CTA.
+
+UI primitives: `MainWrapper`, `AppHeader`, `AppText`, `AppImage`, `Button`, plus `SubscriptionPlanCard` / `FeatureItem`. Do not rebuild plan cards.
+
+## Purchase rules
+
+- JSON/API work stays on `api-integration.mdc`. IAP does **not** go through `useApiMutation`.
+- Keys: `EXPO_PUBLIC_PURCHASE_IOS_KEY` / `EXPO_PUBLIC_PURCHASE_ANDROID_KEY`. Never hardcode API keys.
+- Android products with multiple base plans: purchase via `subscriptionOption` (`Purchases.purchaseSubscriptionOption`). Otherwise `Purchases.purchasePackage`.
+- User cancelled → return `false`, no error toast.
+- Product already owned → sync/restore onto the current RC user, then re-read `CustomerInfo`.
+- After purchase/restore, require active entitlements on `CustomerInfo` before navigating away.
+
+## Hard rules
+
+- No `Purchases.configure` / `logIn` / `purchasePackage` outside `usePurchases.ts`.
+- No RevenueCat Paywalls / `presentPaywall` — this app uses `ManageSubscription`.
+- No gating premium on auth-store or `/auth/me` while `customerInfoResolved` is false.
+- No hardcoded product ids or prices in the screen — offerings only.
+- Do not skip `isPurchasesUserSynced` / `customerInfoResolved` when deciding paywall vs app.
+- Cancel / manage subscription only via `openSubscriptionManagement`.

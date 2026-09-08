@@ -1,0 +1,85 @@
+---
+description: Zustand session/user store — write from API, read with selectors
+globs: src/store/**/*.ts,src/hooks/**/*.ts,src/hooks/**/*.tsx,src/screens/**/*.tsx,src/navigation/**/*.tsx
+alwaysApply: false
+---
+
+# State management (current user)
+
+Session and current-user data live in Zustand (`useAuthStore` in `src/store/auth.store.ts`), persisted with MMKV (`src/store/mmkv_config.ts`). Server lists and screen queries stay in React Query (see `api-integration.mdc`). Do not copy GET list payloads into the auth store.
+
+## Where it lives
+
+| Kind of state | Where | Examples |
+| ------------- | ----- | -------- |
+| Session + current user | `useAuthStore` | `token`, `user`, `referralCode`, `linkedProvider`, onboarding flags |
+| In-progress questionnaire | `assessment.store` | answers, pending submission |
+| One-off UI (sheet open, selected tab) | Component `useState` or BottomBar context | see `bottombar-sheets.mdc` |
+| Remote lists / detail | UI hook + React Query | foods, recipes, notifications |
+
+Do not add a second “user store.” New user fields go on `useAuthStore` (or a derived selector), not a new Zustand file.
+
+`src/store/store.ts` is leftover app boilerplate — do not put user data there.
+
+## How user information is written
+
+The store is updated **from typed API responses**, not from hand-built objects in a screen.
+
+| Event | Call |
+| ----- | ---- |
+| Login / social login | `applyAuthSessionFromLogin` → `applyLoginResponse` then `syncMeAfterAuth` |
+| Verify OTP | `applyVerifyOtpResponse` (then `syncMeAfterAuth` when that flow does) |
+| GET `/auth/me` | `syncFromGetMeResponse` — already run inside `useGetMeQuery` when `data` arrives |
+| PATCH health profile | `syncFromHealthProfileResponse` from the profile UI hook |
+| PATCH link-provider | `syncFromLinkProviderResponse` |
+| Logout / 401 session expiry | `clearAuth` |
+| Local assessment done (API lag) | `markQuestionnaireCompleted` |
+
+```ts
+// ✅ login hook
+useAuthStore.getState().applyLoginResponse?.(response);
+await syncMeAfterAuth();
+
+// ✅ profile hook after PATCH
+syncFromHealthProfileResponse?.(response);
+
+// ❌ screen
+useAuthStore.setState({ user: { ...user, firstName: value } });
+// ❌ screen copies query.data.user into local useState and treats that as source of truth
+```
+
+`useGetMeQuery` is the ongoing refresh: navigators enable it when `token` is set; its `useEffect` pushes `query.data` into the store. After a mutation that changes the user, either call the matching `syncFrom*` with the mutation response **or** `queryClient.invalidateQueries({ queryKey: ["me"] })` so GET `/me` re-syncs. Do both when the mutation payload is a partial user (login already does GET `/me` via `syncMeAfterAuth`).
+
+Subscription **access** is RevenueCat (`inapp-subscription-paywall.mdc`). `usePurchases` may mirror `isSubscribed` onto the auth store for routing — do not treat that mirror as the IAP source of truth.
+
+## How information is passed (read)
+
+UI and navigators **select** slices. They do not take `user` as a prop from a parent unless the child is a memoized list item that should stay dumb.
+
+```ts
+// ✅ subscribe to one field — only this component re-renders
+const token = useAuthStore((s) => s.token);
+const referralCode = useAuthStore((s) => s.referralCode);
+const firstName = useAuthStore((s) => s.user?.["firstName"]);
+
+// ✅ outside React (api.ts, navigationRef, purchase helpers)
+const token = useAuthStore.getState().token;
+
+// ❌ pulls the whole store; every auth write re-renders the screen
+const auth = useAuthStore();
+const { user, token } = useAuthStore();
+```
+
+Pass **primitives** into list rows (`name`, `avatarUrl`), not the store or the full `user` object.
+
+Optional-chain `user` (`user?.["email"]`, `user?._id`). Derive display names in the screen/hook; do not duplicate `fullName` into another store field if it can be computed from `user`.
+
+Routing reads `token` / `user` / `isProfileComplete` from the store (`RootNavigator`, `ensureRootRouteForUser`). Do not keep a parallel “isLoggedIn” in React state.
+
+## Hard rules
+
+- Current user is `useAuthStore.user` (+ token and the derived flags on the same store).
+- Writes go through `apply*` / `syncFrom*` / `clearAuth`, not ad-hoc `setState` of `user` in a screen.
+- Reads use Zustand selectors or `getState()` outside React — never the entire store object.
+- React Query owns lists; the auth store owns the session. Invalidate `["me"]` when the server user changed and you do not already have a full user in the mutation response.
+- Logout always `clearAuth` (and the existing navigation reset). Do not leave a stale `user` with a null token.

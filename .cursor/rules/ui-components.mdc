@@ -1,0 +1,146 @@
+---
+description: UI component placement, breakdown, and required custom primitives
+globs: src/screens/**/*.tsx,src/components/**/*.tsx
+alwaysApply: false
+---
+
+# UI Component Rules
+
+Screens orchestrate. Components render. Never dump a full layout into a screen file, and never rebuild a primitive that already exists in `src/components/common`.
+
+## Use our custom components (required)
+
+Always compose UI from `src/components/common`. Do not use the React Native / library equivalent when a wrapper exists.
+
+| Need              | Use                                      | Do not use                                      |
+| ----------------- | ---------------------------------------- | ----------------------------------------------- |
+| Screen shell      | `MainWrapper`                            | Raw `SafeAreaView` / `ImageBackground` as the screen root |
+| Header            | `AppHeader`                              | A custom title/back row                         |
+| Text              | `AppText` (`weight`, `size`)             | RN `Text`                                       |
+| Image             | `AppImage`                               | RN `Image` or `expo-image` directly             |
+| Avatar            | `UserAvatar`                             | A one-off image + initials row                  |
+| Button / CTA      | `Button` (`primary` \| `outlined` \| `text`) | Hand-rolled `TouchableOpacity` + text      |
+| Text field        | `TextInput`                              | RN `TextInput`                                  |
+| Select            | `Dropdown`                               | A custom picker list                            |
+| Search            | `SearchBar`                              | A custom search row                             |
+| Bottom sheet      | `BottomSheet` (+ `BottomSheetFlatList` / `BottomSheetScrollView` / `BottomSheetTextInput`) | `@gorhom/bottom-sheet` in a feature file |
+| Progress / charts | `ProgressBar`, `Seekbar`, `Piechart`, `BarChart`, `StreakCalendar` | One-off chart widgets when these fit |
+| FAQ row           | `FAQItem`                                | A custom accordion row                          |
+
+Import them from `src/components/common` (the file or the barrel). Extend a common component if you need a variant — do not fork it into a feature folder.
+
+```tsx
+// ✅ GOOD
+<MainWrapper>
+  <AppHeader title="Settings" showBack showIcons={false} />
+  <AppImage source={uri} style={styles.cover} resizeMode="cover" />
+  <AppText weight="SemiBold" size="md">Title</AppText>
+  <Button title="Continue" onPress={onContinue} />
+</MainWrapper>
+
+// ❌ BAD
+<SafeAreaView>
+  <Text>Title</Text>
+  <Image source={{ uri }} />
+  <TouchableOpacity onPress={onContinue}><Text>Continue</Text></TouchableOpacity>
+</SafeAreaView>
+```
+
+Styling: colors from `palette` (`src/theme`). Spacing, radius, and type size via `scale` / `verticalScale` / `moderateScale` from `react-native-size-matters`. `StyleSheet.create` at the bottom of the file. No hardcoded hex. If a color is missing, add it to `palette` first.
+
+## Where files live
+
+```
+src/screens/<stack>/ScreenName.tsx     # route orchestrator only
+src/components/common/                 # app-wide primitives (table above)
+src/components/<feature>/              # UI owned by one screen or flow
+src/components/<feature>/<TabName>/    # one folder per tab on a tabbed screen
+```
+
+- Feature folders: `snake_case`, named after the screen or flow.
+- Component files: `PascalCase`.
+- New screen-specific UI goes in `src/components/<feature>/`, not under `common/`.
+- `common/` is only for widgets reused across flows.
+- Colocate shared `types.ts` / `constants.ts` in the feature folder when more than one file needs them.
+- Each feature folder has an `index.ts` barrel. Screens import from the barrel.
+
+```
+# ✅ screen composes common primitives + feature barrel
+import MainWrapper from "../../components/common/MainWrapper";
+import { SectionCard, ItemList } from "../../components/<feature>";
+
+# ❌ entire screen layout written inside screens/
+# ❌ a one-screen widget dumped into components/common
+```
+
+## How to break a screen
+
+The screen file should only:
+
+1. Wrap with `MainWrapper` (and `AppHeader` when there is a title/back).
+2. Call hooks — never `api/` directly (see `api-integration.mdc`).
+3. Compose sections and pass UI-ready props.
+4. Handle navigation, refresh, and loading/error shells.
+
+Split a new file when **any** of these is true:
+
+| Split as       | When                                                            |
+| -------------- | --------------------------------------------------------------- |
+| `*Card`        | A titled visual block (summary, quote, status, promo)           |
+| `*Item`        | One row in a list — presentational, primitive props             |
+| `*List`        | Maps data → `*Item`; owns section title / empty spacing         |
+| `*Tab`         | Full body of one tab scene                                      |
+| `*Modal`       | Feature-only overlay                                            |
+| `*BottomSheet` | Feature-only sheet **content** (chrome still from common `BottomSheet`) |
+| `*ScreenLayout`| Shared wrapper + header + content padding for a multi-screen flow |
+
+**List / Item:** the list maps and passes primitives. The item does not fetch, does not read route params, and does not import other feature cards.
+
+```tsx
+// ✅ GOOD
+items.map((item) => (
+  <RowItem
+    key={item?.id}
+    title={item?.title ?? ""}
+    subtitle={item?.subtitle ?? ""}
+    onPress={() => onPressItem?.(item?.id)}
+  />
+));
+
+// ❌ BAD — item takes the whole API object and fetches inside the row
+<RowItem item={item} />
+```
+
+**Tabs:** the screen owns `MainWrapper` + the tab bar. Each scene is `src/components/<feature>/<TabName>/<TabName>Tab.tsx`, with that tab’s cards in the same folder.
+
+Do not extract a 5-line wrapper used once with no name in the design. Do extract as soon as a block has its own layout, title, or data.
+
+## Component file shape
+
+- One component per file. Functional component, typed props, **default export**.
+- Props type in the same file unless shared — then `types.ts` in the feature folder.
+- Optional-chain any API-derived value (`item?.name ?? ""`).
+- Keep list items lightweight: no queries, no large hooks. Fetch in a hook; pass props down.
+
+```tsx
+const FeatureCard: React.FC<Props> = ({ title, onPress }) => {
+  return (
+    <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.7}>
+      <AppText weight="SemiBold" size="md">{title}</AppText>
+    </TouchableOpacity>
+  );
+};
+
+export default FeatureCard;
+```
+
+Barrel `index.ts` re-exports defaults as named exports.
+
+## Hard rules
+
+- Always use the custom common components in the table above — never the RN/library equivalent.
+- Screens do not contain large visual trees — extract `*Card` / `*List` / `*Item` / `*Tab`.
+- Feature UI does not live in `screens/` or in `components/common/` (unless it is a true app-wide primitive).
+- Do not hardcode hex colors; add a token to `palette` if missing.
+- Do not import from `src/api/` in a presentational component; the screen/tab uses a hook.
+- New screens go in `src/screens/<stack>/` and must be registered on the matching navigator.
