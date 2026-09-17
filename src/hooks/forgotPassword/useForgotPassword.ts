@@ -37,8 +37,8 @@ export const useForgotPassword = (
       console.log("Forgot password request successful:", response);
       // Show success toast
       showSuccessToast(
-        response.message || "Password reset OTP sent successfully",
-        "Please check your email for the verification code"
+        response.message ||
+          "Password reset OTP sent successfully. Please check your email for the verification code",
       );
       // Call the original callback with email for navigation
       onSubmitCallback({
@@ -49,8 +49,8 @@ export const useForgotPassword = (
       console.error("Forgot password error:", error);
       // Show error toast
       showErrorToast(
-        error.message || "Failed to send reset code",
-        "Please check your email and try again"
+        error.message ||
+          "Failed to send reset code. Please check your email and try again",
       );
       // Handle API errors - set form errors if needed
       if (error.status === 404 || error.status === 400) {

@@ -44,8 +44,8 @@ export const useResetPassword = (
       console.log("Password reset successful:", response);
       // Show success toast
       showSuccessToast(
-        response.message || "Password reset successfully",
-        "You can now sign in with your new password"
+        response.message ||
+          "Password reset successfully. You can now sign in with your new password",
       );
       
       // Store token in auth store
@@ -63,8 +63,8 @@ export const useResetPassword = (
       console.error("Password reset error:", error);
       // Show error toast
       showErrorToast(
-        error.message || "Password reset failed",
-        "Please check your information and try again"
+        error.message ||
+          "Password reset failed. Please check your information and try again",
       );
       // Handle API errors - set form errors if needed
       if (error.status === 400 || error.status === 404) {

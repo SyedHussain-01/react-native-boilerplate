@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, TextProps, TextStyle } from "react-native";
+import { StyleSheet, Text, TextProps, TextStyle, StyleProp } from "react-native";
 import { moderateScale } from "react-native-size-matters";
 
 type FontWeight =
@@ -27,7 +27,7 @@ type AppTextProps = TextProps & {
   weight?: FontWeight;
   italic?: boolean;
   size?: FontSize;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
 };
 
 const getFontSize = (size: FontSize): number => {

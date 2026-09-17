@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "",
-    "slug": "",
+    "name": "React Native Boilerplate",
+    "slug": "react-native-boilerplate",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./src/assets/icons/app_icon.png",
-    "scheme": "",
+    "scheme": "reactnativeboilerplate",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "",
+      "bundleIdentifier": "com.app.boilerplate",
       "buildNumber": "14",
       "entitlements": {
         "aps-environment": "development"
@@ -80,6 +80,9 @@
       [
         "expo-build-properties",
         {
+          "ios": {
+            "useFrameworks": "static"
+          },
           "android": {
             "extraMavenRepos": [
               "../../node_modules/@notifee/react-native/android/libs"
@@ -87,6 +90,7 @@
           }
         }
       ],
+      "./plugins/withRnFirebaseIos.js",
       ["@react-native-google-signin/google-signin"],
       ["expo-apple-authentication"]
     ],
@@ -97,7 +101,6 @@
       "eas": {
         "projectId": ""
       }
-    },
-    "owner": ""
+    }
   }
 }

@@ -1,4 +1,7 @@
-import messaging from "@react-native-firebase/messaging";
+import {
+  getMessaging,
+  getToken,
+} from "@react-native-firebase/messaging";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { storage } from "./mmkv_config";
@@ -9,7 +12,7 @@ interface DeviceTokenState {
   clearDeviceToken: () => void;
 }
 
-const mmkvStorage = createJSONStorage<DeviceTokenState>(() => ({
+const mmkvStorage = createJSONStorage<{ deviceToken: string | null }>(() => ({
   getItem: (name) => {
     const value = storage.getString(name);
     return value ? Promise.resolve(JSON.parse(value)) : Promise.resolve(null);
@@ -60,7 +63,7 @@ export const resolveDeviceToken = async (): Promise<string> => {
   }
 
   try {
-    const token = await messaging().getToken();
+    const token = await getToken(getMessaging());
     if (token) {
       setDeviceToken(token);
       return token;

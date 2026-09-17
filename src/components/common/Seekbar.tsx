@@ -47,7 +47,7 @@ const Seekbar: React.FC<SeekbarProps> = ({
   showNotches = false,
   notchCount = 5,
 }) => {
-  const debounceTimerRef = useRef<number | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleValueChanged = useCallback(
     (low: number, high: number) => {

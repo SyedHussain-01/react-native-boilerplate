@@ -70,18 +70,21 @@ The script lists sibling projects and continues from the first incomplete step. 
 
 ### What the script does
 
-1. `npx create-expo-app` with `blank-typescript@sdk-<version>` (`--no-install`)
+1. `npx create-expo-app` with `blank-typescript@sdk-<version>` (`--no-install`) — default SDK **54**; other majors allowed (confirm if not 54)
 2. Copy `src/` and app icon assets
 3. Copy root files: `App.tsx`, `index.ts`, `firebase.json`, `eas.json`, `.gitignore`
 4. Copy `.agents/` and `.cursor/` (AI skills and MCP config)
 5. Copy config files (`.env.example`, `tsconfig.json`, `babel.config.js`, ESLint, Prettier if present)
 6. Write `app.json` with your name, slug, scheme, bundle IDs (clears the boilerplate EAS `projectId`)
-7. Merge `package.json` scripts and dependencies from this template
-8. `yarn install`
-9. `npx expo install --fix` so packages match the chosen SDK
-10. `npx expo prebuild` → `android/` and `ios/`
-11. `pod install` on macOS
-12. Optional `git init` + first commit
+7. Merge `package.json` **scripts** only (does **not** copy dependency version pins)
+8. `yarn install` (template cores for the selected SDK)
+9. `npx expo install <boilerplate package names>` so versions match the **selected** SDK
+10. `npx expo install --fix` (hard-fail)
+11. `npx expo-doctor` + `npx tsc --noEmit` (hard-fail)
+12. `npx expo prebuild --no-install` → `android/` and `ios/`
+13. Patch `ios/Podfile` for React Native Firebase (`$RNFirebaseDisableSPM` + modular headers)
+14. `pod install` on macOS
+15. Optional `git init` + first commit
 
 ### After the script finishes
 
@@ -90,7 +93,9 @@ cd ../your-project-folder
 cp .env.example .env          # Windows: copy .env.example .env
 ```
 
-Edit `.env`, then:
+Fill `.env` keys when you are ready (API, RevenueCat, Google client IDs). Push/Firebase native wiring is **deferred** until you add services files (see [Enable Firebase / push later](#enable-firebase--push-later)). Link EAS (`eas init` / projectId) manually when you start cloud builds.
+
+Then:
 
 ```bash
 yarn android                  # build & install the Android dev client
@@ -106,7 +111,7 @@ On Windows, use Android or a cloud Mac builder for iOS.
 
 | Area                 | Choice                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------ |
-| Runtime              | Expo SDK **56** in this template (`expo ~56`), React **19.2**, React Native **0.85** |
+| Runtime              | Expo SDK **54** in this template (`expo ~54`), React **19.1**, React Native **0.81** |
 | Architecture         | New Architecture on (`newArchEnabled`), React Compiler on                            |
 | Entry                | `index.ts` → `App.tsx` (not Expo Router)                                             |
 | Navigation           | React Navigation 7 — `@react-navigation/native-stack` + bottom tabs                  |
@@ -165,7 +170,29 @@ Copy `.env.example` to `.env`. Expo inlines variables that start with `EXPO_PUBL
 
 Restart Metro after changing `.env`. Never commit `.env`.
 
-Add Google Sign-In client IDs in `src/hooks/useGoogleSignIn.ts` (`webClientId`, `iosClientId`). Add Firebase `google-services.json` / `GoogleService-Info.plist` when you enable push.
+Add Google Sign-In client IDs via `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` / `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` in `.env` (see `src/hooks/useGoogleSignIn.ts`).
+
+### Enable Firebase / push later
+
+Scaffold does **not** register `@react-native-firebase/app` in `plugins`, so prebuild works without Firebase console files. JS packages stay installed; iOS Podfile patching still runs via `./plugins/withRnFirebaseIos.js`.
+
+When you have real files from the Firebase console:
+
+1. Place them at the project root (or another path you prefer):
+   - `google-services.json` (Android)
+   - `GoogleService-Info.plist` (iOS)
+2. In `app.json`:
+   - Set `expo.android.googleServicesFile` → `"./google-services.json"`
+   - Set `expo.ios.googleServicesFile` → `"./GoogleService-Info.plist"`
+   - Add `"@react-native-firebase/app"` to `expo.plugins` (keep `./plugins/withRnFirebaseIos.js`)
+3. Regenerate native projects:
+
+```bash
+npx expo prebuild --clean
+cd ios && pod install   # macOS
+```
+
+Until then, push token fetch may no-op; the app should still boot.
 
 ---
 
@@ -356,9 +383,9 @@ Settings includes **Manage Subscription** (`ManageSubscription` in the param lis
 
 ### Push notifications
 
-`firebase.json` sets iOS foreground presentation. `app.json` enables `aps-environment`, `remote-notification`, and Android audio/storage permissions.
+Packages `@react-native-firebase/app` and `messaging` are dependencies, but the **`@react-native-firebase/app` config plugin is not registered** until you add services files (see [Enable Firebase / push later](#enable-firebase--push-later)). `firebase.json` still documents FCM iOS foreground options. `app.json` keeps push-related entitlements/permissions for when you enable native Firebase.
 
-`NotificationListener` is a stub. `src/hooks/notifications/useNotifications.ts` expects a `src/api/main` notifications API — implement that module when the backend is ready.
+`NotificationListener` is a stub. `src/hooks/notifications/useNotifications.ts` expects a notifications API — implement that when the backend is ready.
 
 ### Share, images, haptics
 
@@ -380,7 +407,7 @@ Settings includes **Manage Subscription** (`ManageSubscription` in the param lis
 
 After generating a project, run `eas init` (or `eas build:configure`) so `extra.eas.projectId` is set. The setup script **does not** copy the boilerplate `projectId`.
 
-`app.json` plugins already include: `expo-dev-client`, splash screen, image picker, share, fonts, video, build-properties (Notifee Maven), Google Sign-In, Apple Authentication.
+`app.json` plugins already include: `expo-dev-client`, splash screen, image picker, share, fonts, video, build-properties (Notifee Maven + static iOS frameworks), `./plugins/withRnFirebaseIos.js` (Podfile SPM/modular headers), Google Sign-In, Apple Authentication. **`@react-native-firebase/app` is omitted until you enable push** (see above).
 
 Replace icons under `src/assets/icons/` (`app_icon.png`, `app_logo.png`, Android adaptive icons, `favicon.png`). Update splash colors in `app.json` to match your brand.
 
@@ -412,7 +439,7 @@ Keep those folders in generated apps so AI-assisted work follows the same naviga
 ## First product steps
 
 1. Generate the app with `yarn create-project`.
-2. Fill `.env`, bundle IDs, Google/Apple client IDs, and Firebase files.
+2. Fill `.env`, bundle IDs, and Google/Apple client IDs. Enable Firebase/push only when you have services files (see above).
 3. Define `AUTH` (and other) routes in `src/api/endpoints.ts`.
 4. Point Signin / Signup / OTP screens at the existing hooks instead of dummy navigation.
 5. Replace `Placeholder1`–`Placeholder4` with real tabs; register extra `MainStack` screens as needed.

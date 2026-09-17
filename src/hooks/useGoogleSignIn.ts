@@ -6,13 +6,36 @@ import {
 } from "@react-native-google-signin/google-signin";
 import { useCallback } from "react";
 
-GoogleSignin.configure({
-  webClientId: "",
-  iosClientId: "",
-});
+function getGoogleClientIds() {
+  const webClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() || "";
+  const iosClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() || "";
+  return { webClientId, iosClientId };
+}
+
+function ensureGoogleSignInConfigured(): boolean {
+  const { webClientId, iosClientId } = getGoogleClientIds();
+  if (!webClientId && !iosClientId) {
+    return false;
+  }
+
+  GoogleSignin.configure({
+    webClientId: webClientId || undefined,
+    iosClientId: iosClientId || undefined,
+  });
+  return true;
+}
 
 export function useGoogleSignIn() {
   const signInWithGoogle = useCallback(async () => {
+    if (!ensureGoogleSignInConfigured()) {
+      console.log(
+        "[google-sign-in] missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID / EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID",
+      );
+      return;
+    }
+
     try {
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();

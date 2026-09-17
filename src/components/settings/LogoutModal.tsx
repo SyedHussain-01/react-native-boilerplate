@@ -77,7 +77,7 @@ const LogoutModal: React.FC<LogoutModalProps> = ({
                 size="sm"
                 style={[
                   styles.yesButtonText,
-                  isDanger ? styles.yesButtonTextDanger : null,
+                  isDanger ? styles.yesButtonTextDanger : undefined,
                 ]}
               >
                 {isDanger ? "Delete" : "Yes"}

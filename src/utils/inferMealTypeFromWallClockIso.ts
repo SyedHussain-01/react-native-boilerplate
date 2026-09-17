@@ -1,4 +1,4 @@
-import type { MealType } from "../components/view_log_meal/constants";
+export type MealType = "Breakfast" | "Lunch" | "Dinner" | "Snacks";
 
 /**
  * Picks Breakfast / Lunch / Dinner / Snacks from the literal clock in an ISO

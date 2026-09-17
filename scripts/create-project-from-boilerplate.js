@@ -18,6 +18,7 @@ const BOILERPLATE_ROOT = path.resolve(__dirname, "..");
 // Create sibling projects next to this boilerplate folder (same parent directory).
 const PROJECTS_DIR = path.dirname(BOILERPLATE_ROOT);
 const SETUP_STATE_FILE = ".boilerplate-setup-state.json";
+const VALIDATED_MARKER_FILE = ".boilerplate-validated";
 const DEFAULT_EXPO_SDK = "54";
 
 const CONFIG_FILES = [
@@ -42,7 +43,7 @@ const ROOT_FILES_TO_COPY = [
   ".gitignore",
 ];
 
-const ROOT_FOLDERS_TO_COPY = [".agents", ".cursor"];
+const ROOT_FOLDERS_TO_COPY = [".agents", ".cursor", "plugins"];
 
 const APP_ICON_FILES = [
   "app_icon.png",
@@ -53,20 +54,13 @@ const APP_ICON_FILES = [
   "android-icon-monochrome.png",
 ];
 
-const EXPO_CORE_PACKAGES = new Set([
-  "expo",
-  "react",
-  "react-native",
-  "expo-status-bar",
-  "@types/react",
-  "typescript",
-]);
-
 const BOILERPLATE_MARKERS = [
   "@gorhom/bottom-sheet",
   "zustand",
   "@tanstack/react-query",
 ];
+
+const EXPO_INSTALL_CHUNK_SIZE = 25;
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -299,6 +293,33 @@ function resolveExpoSdkMajor(sdkInput) {
   return normalized;
 }
 
+/**
+ * Reads the Expo major version from the boilerplate package.json.
+ * @returns {string}
+ */
+function getBoilerplateExpoMajor() {
+  const packageJson = readJsonFile(path.join(BOILERPLATE_ROOT, "package.json"));
+  const expoVersion = packageJson?.dependencies?.expo;
+
+  if (!expoVersion) {
+    throw new Error(
+      "Boilerplate package.json is missing dependencies.expo.",
+    );
+  }
+
+  const major = String(expoVersion)
+    .replace(/^[^\d]*/, "")
+    .split(".")[0];
+
+  if (!major || !/^\d+$/.test(major)) {
+    throw new Error(
+      `Could not parse Expo major version from "${expoVersion}".`,
+    );
+  }
+
+  return major;
+}
+
 function getExpoTemplate(sdkInput) {
   const sdkMajor = resolveExpoSdkMajor(sdkInput);
   return {
@@ -378,6 +399,7 @@ function hasGitCommit(targetRoot) {
 function getStepChecks(targetRoot, config) {
   const appJson = readJsonFile(path.join(targetRoot, "app.json"));
   const expo = appJson?.expo;
+  const packageJson = readJsonFile(path.join(targetRoot, "package.json"));
 
   return {
     init_expo: () => isExpoProject(targetRoot),
@@ -397,13 +419,24 @@ function getStepChecks(targetRoot, config) {
       CONFIG_FILES.some((file) => fs.existsSync(path.join(targetRoot, file))),
     write_app_json: () =>
       Boolean(expo?.slug && expo?.scheme && expo?.ios?.bundleIdentifier),
-    merge_package_json: () => hasBoilerplateDeps(targetRoot),
+    merge_package_json: () => packageJson?.scripts?.lint === "expo lint",
     yarn_install: () => fs.existsSync(path.join(targetRoot, "node_modules")),
+    expo_install_deps: () => hasBoilerplateDeps(targetRoot),
     expo_install_fix: () =>
       fs.existsSync(path.join(targetRoot, "node_modules", "expo")),
+    validate_install: () =>
+      fs.existsSync(path.join(targetRoot, VALIDATED_MARKER_FILE)),
     prebuild: () =>
       fs.existsSync(path.join(targetRoot, "android")) &&
       fs.existsSync(path.join(targetRoot, "ios")),
+    patch_ios_podfile: () => {
+      const podfilePath = path.join(targetRoot, "ios", "Podfile");
+      if (!fs.existsSync(podfilePath)) {
+        return false;
+      }
+      const contents = fs.readFileSync(podfilePath, "utf8");
+      return contents.includes("$RNFirebaseDisableSPM");
+    },
     pod_install: () =>
       fs.existsSync(path.join(targetRoot, "ios", "Podfile.lock")) ||
       fs.existsSync(path.join(targetRoot, "ios", "Pods", "Manifest.lock")),
@@ -415,13 +448,22 @@ const SETUP_STEPS = [
   { id: "init_expo", label: "Create Expo project" },
   { id: "copy_src", label: "Copy src folder" },
   { id: "copy_root_files", label: "Copy root boilerplate files" },
-  { id: "copy_agent_tooling", label: "Copy .agents and .cursor folders" },
+  { id: "copy_agent_tooling", label: "Copy .agents, .cursor, and plugins folders" },
   { id: "copy_config", label: "Copy config files" },
   { id: "write_app_json", label: "Write app.json" },
-  { id: "merge_package_json", label: "Merge package.json dependencies" },
+  { id: "merge_package_json", label: "Merge package.json scripts" },
   { id: "yarn_install", label: "Install dependencies (yarn)" },
+  {
+    id: "expo_install_deps",
+    label: "Install boilerplate packages (expo install)",
+  },
   { id: "expo_install_fix", label: "Align Expo package versions" },
+  {
+    id: "validate_install",
+    label: "Validate install (expo-doctor + tsc)",
+  },
   { id: "prebuild", label: "Generate android/ and ios/ (prebuild)" },
+  { id: "patch_ios_podfile", label: "Patch iOS Podfile for Firebase" },
   { id: "pod_install", label: "Install CocoaPods (ios/)" },
   { id: "git_init", label: "Initialize git repository" },
 ];
@@ -598,29 +640,63 @@ function ensureAppIconAssets(targetRoot) {
   }
 }
 
-function mergeDependencies(targetDeps = {}, sourceDeps = {}) {
-  const merged = { ...targetDeps };
-
-  for (const [name, version] of Object.entries(sourceDeps)) {
-    if (EXPO_CORE_PACKAGES.has(name) && merged[name]) {
-      continue;
-    }
-
-    merged[name] = version;
+/**
+ * Package names from the boilerplate to install via `expo install`.
+ * Excludes expo/react/react-native from deps (provided by the Expo template).
+ * @returns {{ deps: string[], devDeps: string[] }}
+ */
+function getBoilerplatePackageNames() {
+  const packageJson = readJsonFile(path.join(BOILERPLATE_ROOT, "package.json"));
+  if (!packageJson) {
+    throw new Error("Boilerplate package.json not found.");
   }
 
-  return Object.fromEntries(
-    Object.entries(merged).sort(([a], [b]) => a.localeCompare(b)),
+  const excludeDeps = new Set(["expo", "react", "react-native"]);
+  const deps = Object.keys(packageJson.dependencies || {}).filter(
+    (name) => !excludeDeps.has(name),
   );
+  const devDeps = Object.keys(packageJson.devDependencies || {});
+
+  return { deps, devDeps };
 }
 
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
+ * Install packages with `npx expo install`, chunked to avoid shell length limits.
+ * Hard-fails on error (does not catch).
+ * @param {string[]} packages
+ * @param {{ cwd: string, dev?: boolean }} options
+ */
+function runExpoInstall(packages, { cwd, dev = false }) {
+  if (!packages.length) {
+    return;
+  }
+
+  const chunks = chunkArray(packages, EXPO_INSTALL_CHUNK_SIZE);
+  for (const chunk of chunks) {
+    const flag = dev ? "--dev " : "";
+    run(`npx expo install ${flag}${chunk.join(" ")}`, { cwd });
+  }
+}
+
+/**
+ * Merges scripts (and expo.doctor config) from the boilerplate into the target.
+ * Does not copy dependency versions — those are installed via expo install.
+ */
 function mergePackageJson(targetRoot) {
   const boilerplatePkgPath = path.join(BOILERPLATE_ROOT, "package.json");
   const targetPkgPath = path.join(targetRoot, "package.json");
 
   if (!fs.existsSync(boilerplatePkgPath)) {
     throw new Error(
-      "Boilerplate package.json not found. Cannot merge dependencies.",
+      "Boilerplate package.json not found. Cannot merge package.json.",
     );
   }
 
@@ -630,20 +706,87 @@ function mergePackageJson(targetRoot) {
   const targetPkg = JSON.parse(fs.readFileSync(targetPkgPath, "utf8"));
 
   targetPkg.name = path.basename(targetRoot);
-  targetPkg.dependencies = mergeDependencies(
-    targetPkg.dependencies,
-    boilerplatePkg.dependencies,
-  );
-  targetPkg.devDependencies = mergeDependencies(
-    targetPkg.devDependencies,
-    boilerplatePkg.devDependencies,
-  );
   targetPkg.scripts = {
     ...targetPkg.scripts,
     ...boilerplatePkg.scripts,
   };
 
+  if (boilerplatePkg.expo) {
+    targetPkg.expo = {
+      ...targetPkg.expo,
+      ...boilerplatePkg.expo,
+      doctor: {
+        ...(targetPkg.expo?.doctor || {}),
+        ...(boilerplatePkg.expo.doctor || {}),
+        reactNativeDirectoryCheck: {
+          ...(targetPkg.expo?.doctor?.reactNativeDirectoryCheck || {}),
+          ...(boilerplatePkg.expo.doctor?.reactNativeDirectoryCheck || {}),
+        },
+      },
+    };
+  }
+
   fs.writeFileSync(targetPkgPath, `${JSON.stringify(targetPkg, null, 2)}\n`);
+}
+
+/**
+ * Patch ios/Podfile so RNFirebase works with Expo's static frameworks.
+ * Newer RNFirebase defaults to SPM, which cannot combine with static linkage.
+ * Also restores Firebase modular_headers (previous create-project behavior).
+ */
+function patchIosPodfileForFirebase(targetRoot) {
+  const podfilePath = path.join(targetRoot, "ios", "Podfile");
+  if (!fs.existsSync(podfilePath)) {
+    warn("ios/Podfile not found. Skipping Firebase Podfile patch.");
+    return false;
+  }
+
+  const pluginPath = path.join(
+    BOILERPLATE_ROOT,
+    "plugins",
+    "withRnFirebaseIos.js",
+  );
+  let ensureFixes;
+  if (fs.existsSync(pluginPath)) {
+    ensureFixes = require(pluginPath).ensureRnFirebasePodfileFixes;
+  }
+
+  const original = fs.readFileSync(podfilePath, "utf8");
+  let updated = original;
+
+  if (typeof ensureFixes === "function") {
+    updated = ensureFixes(original);
+  } else {
+    // Fallback if the plugin file was not copied yet
+    if (!updated.includes("$RNFirebaseDisableSPM")) {
+      updated = `$RNFirebaseDisableSPM = true\n$RNFirebaseAsStaticFramework = true\n\n${updated}`;
+    }
+    if (!updated.includes("FirebaseCoreInternal") && updated.includes("use_react_native!")) {
+      const modular = [
+        "  # Firebase modular headers",
+        "  pod 'FirebaseCoreInternal', :modular_headers => true",
+        "  pod 'GoogleUtilities', :modular_headers => true",
+        "  pod 'FirebaseCore', :modular_headers => true",
+        "  pod 'Firebase', :modular_headers => true",
+        "  pod 'FirebaseInstallations', :modular_headers => true",
+        "  pod 'GoogleDataTransport', :modular_headers => true",
+        "  pod 'nanopb', :modular_headers => true",
+        "  pod 'FirebaseCoreExtension', :modular_headers => true",
+        "  pod 'RecaptchaInterop', :modular_headers => true",
+        "",
+      ].join("\n");
+      updated = updated.replace(
+        /^([ \t]*)use_react_native!/m,
+        `${modular}$1use_react_native!`,
+      );
+    }
+  }
+
+  if (updated !== original) {
+    fs.writeFileSync(podfilePath, updated);
+  }
+
+  return updated.includes("$RNFirebaseDisableSPM");
 }
 
 function buildAppJson(config) {
@@ -717,11 +860,31 @@ async function collectNewProjectConfig() {
 
   const version = await ask("App version", "1.0.0");
   const iosBuildNumber = await ask("iOS build number", "1");
-  const expoSdkVersion = await ask(
+  const expoSdkInput = await ask(
     'Expo SDK version (e.g. 54, or type "latest")',
     DEFAULT_EXPO_SDK,
   );
-  resolveExpoSdkMajor(expoSdkVersion);
+  const expoSdkVersion = resolveExpoSdkMajor(expoSdkInput);
+
+  if (expoSdkVersion !== "54") {
+    warn(
+      `SDK ${expoSdkVersion} is a non-default/upgrade scaffold (default is SDK 54).`,
+    );
+    const continueAnyway = await askYesNo(
+      `Continue scaffolding with Expo SDK ${expoSdkVersion}?`,
+      false,
+    );
+    if (!continueAnyway) {
+      throw new Error("Setup cancelled.");
+    }
+  }
+
+  const boilerplateMajor = getBoilerplateExpoMajor();
+  if (expoSdkVersion !== boilerplateMajor) {
+    warn(
+      `Selected SDK ${expoSdkVersion} differs from the boilerplate major (SDK ${boilerplateMajor}). Dependencies will still be installed for the selected SDK.`,
+    );
+  }
 
   const expoOwner = await ask("Expo owner (optional, press Enter to skip)", "");
   const initGit = await askYesNo(
@@ -791,7 +954,7 @@ async function runSetupStep(stepId, config, completedSteps) {
     }
 
     case "copy_agent_tooling": {
-      step("Copying .agents and .cursor folders");
+      step("Copying .agents, .cursor, and plugins folders");
       let copiedFolderCount = 0;
       for (const folder of ROOT_FOLDERS_TO_COPY) {
         if (copyBoilerplateFile(folder, targetRoot)) {
@@ -801,9 +964,9 @@ async function runSetupStep(stepId, config, completedSteps) {
       }
 
       if (copiedFolderCount === 0) {
-        warn("No .agents or .cursor folders were found to copy.");
+        warn("No .agents, .cursor, or plugins folders were found to copy.");
       } else {
-        success(`Copied ${copiedFolderCount} agent tooling folder(s).`);
+        success(`Copied ${copiedFolderCount} tooling folder(s).`);
       }
       break;
     }
@@ -838,9 +1001,9 @@ async function runSetupStep(stepId, config, completedSteps) {
     }
 
     case "merge_package_json": {
-      step("Merging package.json dependencies from boilerplate");
+      step("Merging package.json scripts from boilerplate");
       mergePackageJson(targetRoot);
-      success("package.json merged");
+      success("package.json scripts merged");
       break;
     }
 
@@ -851,16 +1014,30 @@ async function runSetupStep(stepId, config, completedSteps) {
       break;
     }
 
+    case "expo_install_deps": {
+      step("Installing boilerplate packages with expo install");
+      const { deps, devDeps } = getBoilerplatePackageNames();
+      runExpoInstall(deps, { cwd: targetRoot });
+      if (devDeps.length > 0) {
+        runExpoInstall(devDeps, { cwd: targetRoot, dev: true });
+      }
+      success("Boilerplate packages installed");
+      break;
+    }
+
     case "expo_install_fix": {
       step("Aligning Expo-compatible package versions");
-      try {
-        run("npx expo install --fix", { cwd: targetRoot });
-        success("Expo dependencies aligned");
-      } catch {
-        warn(
-          "expo install --fix failed. You may need to run it manually later.",
-        );
-      }
+      run("npx expo install --fix", { cwd: targetRoot });
+      success("Expo dependencies aligned");
+      break;
+    }
+
+    case "validate_install": {
+      step("Validating install (expo-doctor + tsc)");
+      run("npx expo-doctor", { cwd: targetRoot });
+      run("npx tsc --noEmit", { cwd: targetRoot });
+      fs.writeFileSync(path.join(targetRoot, VALIDATED_MARKER_FILE), "");
+      success("Install validated");
       break;
     }
 
@@ -869,13 +1046,35 @@ async function runSetupStep(stepId, config, completedSteps) {
       step("Running Expo prebuild for Android and iOS");
       const hasAndroid = fs.existsSync(path.join(targetRoot, "android"));
       const hasIos = fs.existsSync(path.join(targetRoot, "ios"));
+      // --no-install: skip CocoaPods until after Firebase Podfile patch
       const prebuildCommand =
         hasAndroid || hasIos
-          ? "npx expo prebuild"
-          : "npx expo prebuild --clean";
+          ? "npx expo prebuild --no-install"
+          : "npx expo prebuild --clean --no-install";
 
       run(prebuildCommand, { cwd: targetRoot });
       success("Native android/ and ios/ folders generated");
+      break;
+    }
+
+    case "patch_ios_podfile": {
+      step("Patching ios/Podfile for React Native Firebase");
+      const iosDir = path.join(targetRoot, "ios");
+      if (!fs.existsSync(iosDir)) {
+        warn("ios/ folder was not generated. Skipping Podfile patch.");
+        break;
+      }
+
+      const patched = patchIosPodfileForFirebase(targetRoot);
+      if (patched) {
+        success(
+          "Podfile patched ($RNFirebaseDisableSPM + Firebase modular_headers)",
+        );
+      } else {
+        throw new Error(
+          "Failed to patch ios/Podfile for Firebase. Refusing to run pod install.",
+        );
+      }
       break;
     }
 
@@ -974,7 +1173,15 @@ function printNextSteps(targetRoot) {
   console.log("\nNext steps:");
   console.log(`  cd ${quoteShellPath(targetRoot)}`);
   console.log(`  ${copyEnvCommand}`);
-  console.log("  # edit .env with your environment values");
+  console.log("  # copy .env.example to .env and fill keys when ready");
+  console.log(
+    "  # Firebase push (later): add google-services.json + GoogleService-Info.plist,",
+  );
+  console.log(
+    "  # set android/ios googleServicesFile in app.json, add plugin @react-native-firebase/app,",
+  );
+  console.log("  # then: npx expo prebuild --clean && cd ios && pod install");
+  console.log("  # link an EAS project later when you are ready (eas init / eas build)");
   if (!IS_WINDOWS) {
     console.log("  yarn ios               # build & install dev client (iOS)");
   }

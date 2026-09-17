@@ -62,9 +62,9 @@ const ActionButton: React.FC<ActionButtonProps> = ({
     // Then navigate after a small delay to ensure menu closes first
     setTimeout(() => {
       if (icon === "view_meal") {
-        navigation.navigate("ViewLogMeal");
+        navigation.navigate({ name: "ViewLogMeal", params: {} });
       } else {
-        navigation.navigate("LogMeal", {});
+        navigation.navigate({ name: "LogMeal", params: {} });
       }
     }, 100);
   };
